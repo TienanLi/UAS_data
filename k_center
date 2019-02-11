@@ -1,0 +1,253 @@
+from math import sin, cos, sqrt, atan2, radians
+import pickle
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import random
+import shapefile
+from pyproj import Proj, transform
+import gdal
+
+
+r=5
+r=r*1000
+r=r*1.60934
+
+def covert_coordinate_from_4326_to_MA(point):
+    y1, x1 = point[0], point[1]
+    inProj = Proj(init='epsg:4326')
+    outProj = Proj(init='epsg:26986')
+    x2, y2 = transform(inProj, outProj, x1, y1)
+    return (y2, x2)
+
+def read_raster(raster_name):
+    ds = gdal.Open(raster_name)
+    cols=ds.RasterXSize
+    rows=ds.RasterYSize
+    geo= ds.GetGeoTransform()
+    originX=geo[0]
+    originY=geo[3]
+    pixelWidth=geo[1]
+    pixelHeight=geo[5]
+    band = ds.GetRasterBand(1)
+    data = band.ReadAsArray(0, 0, cols, rows)
+    point_set=[]
+    for c in range(cols):
+        for r in range(rows):
+            if data[r,c]==1:
+                point=cal_coor_from_offset(c,r,originX,originY,pixelWidth,pixelHeight)
+                point_set.append(point)
+    return point_set
+
+def cal_coor_from_offset(xoffset,yoffset,originX,originY,pixelWidth,pixelHeight):
+    x = xoffset * pixelWidth + originX
+    y = yoffset * pixelHeight + originY
+    return (y,x)
+
+def maintenance_depots(shpname):
+    m_d=[]
+    sf=shapefile.Reader(shpname)
+    shp=sf.shapes()
+    length=len(shp)
+    print("\nMaintenance depots: "+str(length))
+    for s in shp:
+        point=s.points[0]
+        output_point=(point[1],point[0])
+        m_d.append(output_point)
+    return m_d
+
+def cal_distance(point_1,point_2):
+    # approximate radius of earth in km
+    R = 6373.0
+    lat1 = radians(point_1[0])
+    lon1 = radians(point_1[1])
+    lat2 = radians(point_2[0])
+    lon2 = radians(point_2[1])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    distance = R * c
+    return distance
+
+def cal_distance_simplified(point_1,point_2):
+    return (sqrt((point_1[0]-point_2[0])**2+(point_1[1]-point_2[1])**2))
+
+
+def find_included(point, point_set, included_set,distance):
+    for p in point_set:
+        if p not in included_set:
+            distance_n=cal_distance_simplified(p, point)
+            if distance_n<=distance:
+                included_set.append(p)
+    return included_set
+
+def read_point_and_process():
+    point_set = pickle.load(open('point_set.obj', 'rb'))
+    start_time=[p[1] for p in point_set]
+    point_set=[p[0] for p in point_set]
+    print('incidents:',len(point_set))
+    point_set=[(p[0]+random.uniform(-1e-06,1e-06),p[1]+random.uniform(-1e-06,1e-06)) for p in point_set]
+    point_set=list(set(point_set[:]))
+    point_set=[covert_coordinate_from_4326_to_MA(p) for p in point_set]
+    greedy_find(point_set,start_time)
+    # greedy_generate(point_set)
+
+def greedy_generate(point_set):
+    original_point_set=point_set.copy()
+    final_center_set=[]
+    while len(point_set)>len(original_point_set)*0.3:
+        print(len(point_set))
+        center_set = generate_random_circle(point_set, 1)
+        circle_info=circle_rank(center_set,point_set)
+        final_center_set.append(circle_info[0])
+        excluded_set=circle_info[1]
+        excluded_set.sort(reverse=True)
+        for point in excluded_set:
+            point_set.pop(point)
+    print(len(final_center_set))
+    draw(original_point_set,final_center_set)
+
+def exclude_unnecessary(center_set,point_set,start_time_set,threshold):
+    key_threshold = r / 1000 / 1.60934 * 12
+    flink = open('stations.txt','w+')
+    original_point_set = point_set.copy()
+    final_center_set = []
+    max_cov=threshold
+    key_sum=0
+    key_count=0
+    key_center_set=[]
+    while max_cov>=threshold:
+        circle_info = circle_rank(center_set, point_set)
+        if not len(circle_info):
+            break
+        excluded_set=circle_info[1]
+        final_center_set.append((circle_info[0],len(excluded_set)))
+        min_t_gap=find_minimum_time_gap(start_time_set,excluded_set,original_point_set)
+        max_cov=len(excluded_set)
+        if max_cov>=key_threshold:
+            print('position:',circle_info[0],'number of incidents:',max_cov,' min_time_gap:',min_t_gap,' mins')
+            flink.write('%s,%s,%s,%s,k\n' % (circle_info[0][0], circle_info[0][1], max_cov, min_t_gap))
+            key_center_set.append((circle_info[0], len(excluded_set)))
+            key_sum+=max_cov
+            key_count+=1
+        else:
+            flink.write('%s,%s,%s,%s,r\n' % (circle_info[0][0], circle_info[0][1], max_cov, min_t_gap))
+        excluded_set.sort(reverse=True)
+        for point in excluded_set:
+            point_set.remove(point)
+    flink.close()
+    print('number of key stations:', key_count)
+    print('key stations coverage:', key_sum / len(original_point_set))
+    print('coverage:',1-len(point_set)/len(original_point_set))
+    return final_center_set,original_point_set,key_center_set
+
+def find_minimum_time_gap(start_time_set,excluded_set,original_point_set):
+    index_set=[]
+    for p in excluded_set:
+        index_set.append(original_point_set.index(p))
+    indexed_start_time=[start_time_set[i] for i in index_set]
+    indexed_start_time.sort()
+    min_gap = indexed_start_time[1] - indexed_start_time[0]
+    for i in range(len(indexed_start_time)-1):
+        gap=indexed_start_time[i+1]-indexed_start_time[i]
+        if gap<min_gap:
+            min_gap=gap
+    td_mins = round(min_gap.total_seconds() / 60, 1)
+    return td_mins
+
+
+def circle_rank(center_set,point_set):
+    circle_info=[]
+    max_cov=0
+    for center in center_set:
+        included_set=find_included(center,point_set,[],r)
+        if len(included_set)>max_cov:
+            circle_info=(center,included_set)
+            max_cov=len(included_set)
+    return circle_info
+
+def greedy_find(point_set,start_time_set):
+    raster_area1=read_raster('ForLowell/2%floodfinal.tif')
+    raster_area2=read_raster('ForLowell/bob9151mph1.tif')
+    raster_area3=read_raster('ForLowell/fld9951mph1.tif')
+    m_d_set=maintenance_depots('Maintenance_Depots/Maintenance_Depots.shp')
+    center_set_points=[]
+    # included_set=[]
+    # double_adjacent_set=[]
+    ran_initial=random.randint(0,len(m_d_set))
+    p_f = m_d_set[ran_initial]
+    while p_f is not None:
+        center_set_points.append(p_f)
+        # included_set=find_included(p_f,point_set,included_set,r)
+        # double_adjacent_set=find_included(p_f,point_set,double_adjacent_set,2*r)
+        p_f = find_furthest_point(p_f,m_d_set,center_set_points)
+        print('stations:',len(center_set_points))
+    # center_set_points=[point_set[c_index] for c_index in center_set]
+    center_set_points,original_point_set,key_center_set=exclude_unnecessary(center_set_points,point_set,start_time_set,threshold=int(1.25*4**(r/1000/1.60934/5)))
+    print('final stations:',len(center_set_points))
+    raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%')
+    raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991')
+    raster_coverage(center_set_points,key_center_set,raster_area3,'Floyd 1999')
+    draw(original_point_set,[p[0] for p in center_set_points],[p[1] for p in center_set_points])
+
+def raster_coverage(center_point_set,key_station,point_set,name):
+    included_set=[]
+    key_coverage=0
+    for c_p in center_point_set:
+        old_included_set=included_set.copy()
+        included_set=find_included(c_p[0],point_set,included_set,r)
+        if c_p in key_station:
+            key_coverage+=len(included_set)-len(old_included_set)
+    coverage=len(included_set)/len(point_set)
+    k_c=key_coverage/len(point_set)
+    print('%s converage:'%name,coverage,' key coverage:',k_c)
+
+def find_furthest_point(point,point_set,included_set):
+    distance=0
+    p_f=(0,0)
+    for p in point_set:
+        if p not in included_set:
+            distance_n = cal_distance_simplified(p, point)
+            if distance_n > distance:
+                distance = distance_n
+                p_f = p
+    if distance>r:
+        return p_f
+    return None
+
+def generate_random_circle(point_set,n):
+    center_set=[]
+    for point in point_set:
+        for i in range(n):
+            center_x=point[0]+random.uniform(-1,1)*r/100
+            center_y=point[1]+random.uniform(-1,1)*r/100
+            center_set.append((center_x,center_y))
+    return center_set
+
+def sortSecondLen(val):
+    return len(val[1])
+
+def draw(point_set,center_set,frequency=None):
+    fig = plt.figure(figsize=(13, 6), dpi=100, tight_layout=True)
+    ax = fig.add_subplot(111)
+    scatter1=[p[0] for p in point_set]
+    scatter2=[p[1] for p in point_set]
+    plt.scatter(scatter2,scatter1,s=1,edgecolors='k')
+    for i in range(len(center_set)):
+        p=center_set[i]
+        f=frequency[i]
+        if frequency is not None:
+            c,a=decide_color(f,threshold=120)
+        patch = patches.Circle((p[1],p[0]), radius=r,fc=c,alpha=a)
+        ax.add_patch(patch)
+    plt.legend((patches.Circle((0,0), radius=r,fc='r',alpha=0.2),patches.Circle((0,0), radius=r,fc='g',alpha=0.1)), ('Key stations', 'Regular Stations'))
+    plt.savefig('station.png')
+
+def decide_color(f,threshold):
+    if f>=threshold:
+        return 'r',0.2
+    else:
+        return 'g',0.1
+
+if __name__ == '__main__':
+    read_point_and_process()
