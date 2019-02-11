@@ -7,8 +7,7 @@ import shapefile
 from pyproj import Proj, transform
 import gdal
 
-
-r=5
+r=10
 r=r*1000
 r=r*1.60934
 
