@@ -125,25 +125,54 @@ def greedy_find(point_set,start_time_set,duration_set):
         # included_set=find_included(p_f,point_set,included_set,r)
         # double_adjacent_set=find_included(p_f,point_set,double_adjacent_set,2*r)
         p_f = find_furthest_point(p_f,m_d_set,center_set_points)
-        # print('stations:',len(center_set_points))
     # center_set_points=[point_set[c_index] for c_index in center_set]
     center_set_points,original_point_set,key_center_set,min_gap,key_min,correlated_num,parallel_num,same_time_num=\
         exclude_unnecessary(center_set_points,point_set,start_time_set,duration_set,threshold=TH)
 
-    start=0
-    end=125
-    bin=int((end-start)/5)
-    min_gap_duration_groups=[0 for i in range(5)]
+    # draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num)
+    # print('final stations: ',len(center_set_points))
+
+    network_cost=cal_cost(same_time_num)
+    print('constant cost:',len(center_set_points)*4,'\nlinear cost:',network_cost[0],'\nexponential cost:',network_cost[1])
+
+    # raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%')
+    # raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991')
+    # raster_coverage(center_set_points,key_center_set,raster_area3,'Floyd 1999')
+    draw(original_point_set,[p[0] for p in center_set_points],[p[1] for p in center_set_points])
+
+def cal_cost(same_time_num):
+    r_in_mile=r / 1000 / 1.60934
+
+    cost_linear=0
+    alpha=1/2
+    individual_cost_linear=r_in_mile*alpha
+
+    cost_exponential=0
+    base=1.2
+    individual_cost_exponential=base**r_in_mile
+
+    for num in same_time_num:
+        cost_linear+=num*individual_cost_linear
+        cost_exponential+=num*individual_cost_exponential
+
+    return (round(cost_linear,1),round(cost_exponential,1))
+
+def draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num):
+    start = 0
+    end = 125
+    bin = int((end - start) / 5)
+    min_gap_duration_groups = [0 for i in range(5)]
     for a_g in min_gap:
-        d=get_between(np.append(np.arange(start,end,bin),[1e8]),a_g)
-        min_gap_duration_groups[d]+=1
+        d = get_between(np.append(np.arange(start, end, bin), [1e8]), a_g)
+        min_gap_duration_groups[d] += 1
     fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
     ax = fig.add_subplot(111)
     labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(start+bin/2,end,bin), labels, width=bin)
-    plt.xticks(np.arange(start+bin/2,end,bin),['%s - %s'%(start,start+bin),'%s - %s'%(start+bin,start+bin*2),
-                                               '%s - %s'%(start+bin*2,start+bin*3), '%s - %s'%(start+bin*3,start+bin*4),
-                                               'more than\n %s'%(start+bin*4)],fontsize=16)
+    rects = ax.bar(np.arange(start + bin / 2, end, bin), labels, width=bin)
+    plt.xticks(np.arange(start + bin / 2, end, bin),
+               ['%s - %s' % (start, start + bin), '%s - %s' % (start + bin, start + bin * 2),
+                '%s - %s' % (start + bin * 2, start + bin * 3), '%s - %s' % (start + bin * 3, start + bin * 4),
+                'more than\n %s' % (start + bin * 4)], fontsize=16)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(16)
     axes = plt.gca()
@@ -157,14 +186,14 @@ def greedy_find(point_set,start_time_set,duration_set):
         rect = rects[i]
         height = rect.get_height()
         get_x = rect.get_x()
-        ax.text(get_x + bin/2, height + y_limit[1]*0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center',fontsize=18)
+        ax.text(get_x + bin / 2, height + y_limit[1] * 0.04,
+                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
     plt.title('All stations', fontsize=16)
-    plt.xlabel('minimum time gap (min)',fontsize=16)
+    plt.xlabel('minimum time gap (min)', fontsize=16)
     plt.savefig('min time gap.png')
     plt.close()
 
-    min_gap=key_min
+    min_gap = key_min
     min_gap_duration_groups = [0 for i in range(5)]
     for a_g in min_gap:
         d = get_between(np.append(np.arange(start, end, bin), [1e8]), a_g)
@@ -193,15 +222,15 @@ def greedy_find(point_set,start_time_set,duration_set):
         ax.text(get_x + bin / 2, height + y_limit[1] * 0.04,
                 "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
     plt.title('Key stations', fontsize=16)
-    plt.xlabel('minimum time gap (min)',fontsize=16)
+    plt.xlabel('minimum time gap (min)', fontsize=16)
     plt.savefig('key min time gap.png')
     plt.close()
 
-    start=1
-    end=6
-    bin=int((end-start+1)/3)
-    hist_range=np.append([0],np.append(np.arange(start-0.5, end+1, bin), [1e8]))
-    min_gap=correlated_num
+    start = 1
+    end = 6
+    bin = int((end - start + 1) / 3)
+    hist_range = np.append([0], np.append(np.arange(start - 0.5, end + 1, bin), [1e8]))
+    min_gap = correlated_num
     min_gap_duration_groups = [0 for i in range(5)]
     for a_g in min_gap:
         d = get_between(hist_range, a_g)
@@ -209,11 +238,11 @@ def greedy_find(point_set,start_time_set,duration_set):
     fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
     ax = fig.add_subplot(111)
     labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(1,6, 1), labels, width=1)
-    plt.xticks(np.arange(1,6, 1),
-               ['0','%s - %s' % (start, start + bin-1), '%s - %s' % (start + bin, start + bin * 2-1),
-                '%s - %s' % (start + bin * 2, start + bin * 3-1),
-                'more than\n %s' % (start + bin * 3-1)], fontsize=16)
+    rects = ax.bar(np.arange(1, 6, 1), labels, width=1)
+    plt.xticks(np.arange(1, 6, 1),
+               ['0', '%s - %s' % (start, start + bin - 1), '%s - %s' % (start + bin, start + bin * 2 - 1),
+                '%s - %s' % (start + bin * 2, start + bin * 3 - 1),
+                'more than\n %s' % (start + bin * 3 - 1)], fontsize=16)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(16)
     axes = plt.gca()
@@ -227,10 +256,10 @@ def greedy_find(point_set,start_time_set,duration_set):
         rect = rects[i]
         height = rect.get_height()
         get_x = rect.get_x()
-        ax.text(get_x +1 / 2, height + y_limit[1] * 0.04,
+        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04,
                 "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('Radius = %s miles'%(int(r/ 1000 / 1.60934 )), fontsize=16)
-    plt.xlabel('Number of correlated incident groups',fontsize=16)
+    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
+    plt.xlabel('Number of correlated incident groups', fontsize=16)
     plt.savefig('correlated incident.png')
     plt.close()
 
@@ -267,7 +296,7 @@ def greedy_find(point_set,start_time_set,duration_set):
     plt.savefig('parallel incident.png')
     plt.close()
 
-    min_gap = [correlated_num[i]+parallel_num[i] for i in range(len(correlated_num))]
+    min_gap = [correlated_num[i] + parallel_num[i] for i in range(len(correlated_num))]
     min_gap_duration_groups = [0 for i in range(5)]
     for a_g in min_gap:
         d = get_between(hist_range, a_g)
@@ -300,17 +329,17 @@ def greedy_find(point_set,start_time_set,duration_set):
     plt.savefig('total incident.png')
     plt.close()
 
-    same_time_incident_groups=[0 for i in range(4)]
+    same_time_incident_groups = [0 for i in range(4)]
     for a_g in same_time_num:
-        d=get_between(np.arange(0.5,5,1),a_g)
-        same_time_incident_groups[d]+=1
+        d = get_between(np.arange(0.5, 5, 1), a_g)
+        same_time_incident_groups[d] += 1
     fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
     ax = fig.add_subplot(111)
 
     labels = [f / len(same_time_num) for f in same_time_incident_groups]
     labels = same_time_incident_groups
 
-    rects = ax.bar(np.arange(1,5,1), labels, width=1)
+    rects = ax.bar(np.arange(1, 5, 1), labels, width=1)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(16)
     for tick in ax.xaxis.get_major_ticks():
@@ -327,17 +356,12 @@ def greedy_find(point_set,start_time_set,duration_set):
         height = rect.get_height()
         get_x = rect.get_x()
         # ax.text(get_x + 1/2, height + y_limit[1]*0.04, "{0:.1f}%".format(labels[i] * 100), ha='center', va='center',fontsize=18)
-        ax.text(get_x + 1/2, height + y_limit[1]*0.04, labels[i], ha='center', va='center',fontsize=18)
-    plt.title('Radius = %s miles'%(int(r/ 1000 / 1.60934 )), fontsize=16)
-    plt.xlabel('Highest number of parallel incidents\n occurring at the same time',fontsize=16)
+        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04, labels[i], ha='center', va='center', fontsize=18)
+    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
+    plt.xlabel('Highest number of parallel incidents\n occurring at the same time', fontsize=16)
     plt.savefig('same time incident.png')
     plt.close()
 
-    print('final stations:',len(center_set_points))
-    # raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%')
-    # raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991')
-    # raster_coverage(center_set_points,key_center_set,raster_area3,'Floyd 1999')
-    draw(original_point_set,[p[0] for p in center_set_points],[p[1] for p in center_set_points])
 
 def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,threshold):
     key_threshold = r / 1000 / 1.60934 * 12
@@ -383,9 +407,9 @@ def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,thresho
         for point in excluded_set:
             point_set.remove(point)
     flink.close()
-    print('number of key stations:', key_count)
-    print('key stations coverage:', key_sum / len(original_point_set))
-    print('coverage:',1-len(point_set)/len(original_point_set))
+    # print('number of key stations:', key_count)
+    # print('key stations coverage:', key_sum / len(original_point_set))
+    # print('coverage:',1-len(point_set)/len(original_point_set))
     return final_center_set,original_point_set,key_center_set,\
            min_t_gap_set,key_min_t_gap_set,correlated_incidents_set,parallel_incident_set,same_time_incident_set
 
@@ -558,8 +582,9 @@ def get_between(x, d):
 if __name__ == '__main__':
     global TH,r
     TH = 0.05
-    r=10
-    r = r * 1000
-    r = r * 1.60934
-    read_point_and_process()
+    for r in range(5,11):
+        print('radius:',r)
+        r = r * 1000
+        r = r * 1.60934
+        read_point_and_process()
 
