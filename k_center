@@ -1,116 +1,29 @@
-from math import sin, cos, sqrt, atan2, radians
 import pickle
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import random
-import shapefile
-from pyproj import Proj, transform
-import gdal
-import numpy as np
-from matplotlib.ticker import PercentFormatter
 import matplotlib
-from datetime import timedelta
+from side_function import covert_coordinate_from_4326_to_MA,maintenance_depots,find_furthest_point,\
+    find_minimum_time_gap,MIC_analyses,circle_rank,read_raster,cal_cost,raster_coverage,draw
+
 
 font = {'size'   : 24}
 matplotlib.rc('font', **font)
-
-def covert_coordinate_from_4326_to_MA(point):
-    y1, x1 = point[0], point[1]
-    inProj = Proj(init='epsg:4326')
-    outProj = Proj(init='epsg:26986')
-    x2, y2 = transform(inProj, outProj, x1, y1)
-    return (y2, x2)
-
-def read_raster(raster_name):
-    ds = gdal.Open(raster_name)
-    cols=ds.RasterXSize
-    rows=ds.RasterYSize
-    geo= ds.GetGeoTransform()
-    originX=geo[0]
-    originY=geo[3]
-    pixelWidth=geo[1]
-    pixelHeight=geo[5]
-    band = ds.GetRasterBand(1)
-    data = band.ReadAsArray(0, 0, cols, rows)
-    point_set=[]
-    for c in range(cols):
-        for r in range(rows):
-            if data[r,c]==1:
-                point=cal_coor_from_offset(c,r,originX,originY,pixelWidth,pixelHeight)
-                point_set.append(point)
-    return point_set
-
-def cal_coor_from_offset(xoffset,yoffset,originX,originY,pixelWidth,pixelHeight):
-    x = xoffset * pixelWidth + originX
-    y = yoffset * pixelHeight + originY
-    return (y,x)
-
-def maintenance_depots(shpname):
-    m_d=[]
-    sf=shapefile.Reader(shpname)
-    shp=sf.shapes()
-    length=len(shp)
-    # print("\nMaintenance depots: "+str(length))
-    for s in shp:
-        point=s.points[0]
-        output_point=(point[1],point[0])
-        m_d.append(output_point)
-    return m_d
-
-def cal_distance(point_1,point_2):
-    # approximate radius of earth in km
-    R = 6373.0
-    lat1 = radians(point_1[0])
-    lon1 = radians(point_1[1])
-    lat2 = radians(point_2[0])
-    lon2 = radians(point_2[1])
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-    distance = R * c
-    return distance
-
-def cal_distance_simplified(point_1,point_2):
-    return (sqrt((point_1[0]-point_2[0])**2+(point_1[1]-point_2[1])**2))
-
-
-def find_included(point, point_set, included_set,distance):
-    for p in point_set:
-        if p not in included_set:
-            distance_n=cal_distance_simplified(p, point)
-            if distance_n<=distance:
-                included_set.append(p)
-    return included_set
 
 def read_point_and_process():
     point_set = pickle.load(open('point_set.obj', 'rb'))
     start_time=[p[1] for p in point_set]
     duration=[p[2] for p in point_set]
+    severity=[p[3] for p in point_set]
+    sub_type=[p[4] for p in point_set]
     point_set=[p[0] for p in point_set]
+
     # print('incidents:',len(point_set))
-    new_point_set=[(p[0]+random.uniform(-1e-06,1e-06),p[1]+random.uniform(-1e-06,1e-06)) for p in point_set]
+    new_point_set=[(p[0]+random.uniform(-1e-09,1e-09),p[1]+random.uniform(-1e-09,1e-09)) for p in point_set]
     new_point_set=[covert_coordinate_from_4326_to_MA(p) for p in new_point_set]
 
-    greedy_find(new_point_set,start_time,duration)
+    greedy_find(new_point_set,start_time,duration,severity,sub_type)
     # greedy_generate(point_set)
 
-def greedy_generate(point_set):
-    original_point_set=point_set.copy()
-    final_center_set=[]
-    while len(point_set)>len(original_point_set)*0.3:
-        print(len(point_set))
-        center_set = generate_random_circle(point_set, 1)
-        circle_info=circle_rank(center_set,point_set)
-        final_center_set.append(circle_info[0])
-        excluded_set=circle_info[1]
-        excluded_set.sort(reverse=True)
-        for point in excluded_set:
-            point_set.pop(point)
-    print(len(final_center_set))
-    draw(original_point_set,final_center_set)
-
-def greedy_find(point_set,start_time_set,duration_set):
+def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
     # raster_area1=read_raster('ForLowell/2%floodfinal.tif')
     # raster_area2=read_raster('ForLowell/bob9151mph1.tif')
     # raster_area3=read_raster('ForLowell/fld9951mph1.tif')
@@ -124,246 +37,24 @@ def greedy_find(point_set,start_time_set,duration_set):
         center_set_points.append(p_f)
         # included_set=find_included(p_f,point_set,included_set,r)
         # double_adjacent_set=find_included(p_f,point_set,double_adjacent_set,2*r)
-        p_f = find_furthest_point(p_f,m_d_set,center_set_points)
+        p_f = find_furthest_point(p_f,m_d_set,center_set_points,r)
     # center_set_points=[point_set[c_index] for c_index in center_set]
     center_set_points,original_point_set,key_center_set,min_gap,key_min,correlated_num,parallel_num,same_time_num=\
-        exclude_unnecessary(center_set_points,point_set,start_time_set,duration_set,threshold=TH)
+        exclude_unnecessary(center_set_points,point_set,start_time_set,duration_set,severity,sub_type,threshold=TH)
 
-    # draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num)
+    # draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num,r)
     # print('final stations: ',len(center_set_points))
 
-    network_cost=cal_cost(same_time_num)
-    print('constant cost:',len(center_set_points)*4,'\nlinear cost:',network_cost[0],'\nexponential cost:',network_cost[1])
+    network_cost=cal_cost(same_time_num,r)
+    print('linear cost:',network_cost[0],'\nexponential cost:',network_cost[1])
 
-    # raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%')
-    # raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991')
-    # raster_coverage(center_set_points,key_center_set,raster_area3,'Floyd 1999')
-    draw(original_point_set,[p[0] for p in center_set_points],[p[1] for p in center_set_points])
-
-def cal_cost(same_time_num):
-    r_in_mile=r / 1000 / 1.60934
-
-    cost_linear=0
-    alpha=1/2
-    individual_cost_linear=r_in_mile*alpha
-
-    cost_exponential=0
-    base=1.2
-    individual_cost_exponential=base**r_in_mile
-
-    for num in same_time_num:
-        cost_linear+=num*individual_cost_linear
-        cost_exponential+=num*individual_cost_exponential
-
-    return (round(cost_linear,1),round(cost_exponential,1))
-
-def draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num):
-    start = 0
-    end = 125
-    bin = int((end - start) / 5)
-    min_gap_duration_groups = [0 for i in range(5)]
-    for a_g in min_gap:
-        d = get_between(np.append(np.arange(start, end, bin), [1e8]), a_g)
-        min_gap_duration_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(start + bin / 2, end, bin), labels, width=bin)
-    plt.xticks(np.arange(start + bin / 2, end, bin),
-               ['%s - %s' % (start, start + bin), '%s - %s' % (start + bin, start + bin * 2),
-                '%s - %s' % (start + bin * 2, start + bin * 3), '%s - %s' % (start + bin * 3, start + bin * 4),
-                'more than\n %s' % (start + bin * 4)], fontsize=16)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0, end)
-    axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        ax.text(get_x + bin / 2, height + y_limit[1] * 0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('All stations', fontsize=16)
-    plt.xlabel('minimum time gap (min)', fontsize=16)
-    plt.savefig('min time gap.png')
-    plt.close()
-
-    min_gap = key_min
-    min_gap_duration_groups = [0 for i in range(5)]
-    for a_g in min_gap:
-        d = get_between(np.append(np.arange(start, end, bin), [1e8]), a_g)
-        min_gap_duration_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(start + bin / 2, end, bin), labels, width=bin)
-    plt.xticks(np.arange(start + bin / 2, end, bin),
-               ['%s - %s' % (start, start + bin), '%s - %s' % (start + bin, start + bin * 2),
-                '%s - %s' % (start + bin * 2, start + bin * 3), '%s - %s' % (start + bin * 3, start + bin * 4),
-                'more than\n %s' % (start + bin * 4)], fontsize=16)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0, end)
-    axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        ax.text(get_x + bin / 2, height + y_limit[1] * 0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('Key stations', fontsize=16)
-    plt.xlabel('minimum time gap (min)', fontsize=16)
-    plt.savefig('key min time gap.png')
-    plt.close()
-
-    start = 1
-    end = 6
-    bin = int((end - start + 1) / 3)
-    hist_range = np.append([0], np.append(np.arange(start - 0.5, end + 1, bin), [1e8]))
-    min_gap = correlated_num
-    min_gap_duration_groups = [0 for i in range(5)]
-    for a_g in min_gap:
-        d = get_between(hist_range, a_g)
-        min_gap_duration_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(1, 6, 1), labels, width=1)
-    plt.xticks(np.arange(1, 6, 1),
-               ['0', '%s - %s' % (start, start + bin - 1), '%s - %s' % (start + bin, start + bin * 2 - 1),
-                '%s - %s' % (start + bin * 2, start + bin * 3 - 1),
-                'more than\n %s' % (start + bin * 3 - 1)], fontsize=16)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0.5, 5.5)
-    axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
-    plt.xlabel('Number of correlated incident groups', fontsize=16)
-    plt.savefig('correlated incident.png')
-    plt.close()
-
-    min_gap = parallel_num
-    min_gap_duration_groups = [0 for i in range(5)]
-    for a_g in min_gap:
-        d = get_between(hist_range, a_g)
-        min_gap_duration_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(1, 6, 1), labels, width=1)
-    plt.xticks(np.arange(1, 6, 1),
-               ['0', '%s - %s' % (start, start + bin - 1), '%s - %s' % (start + bin, start + bin * 2 - 1),
-                '%s - %s' % (start + bin * 2, start + bin * 3 - 1),
-                'more than\n %s' % (start + bin * 3 - 1)], fontsize=16)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0.5, 5.5)
-    axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
-    plt.xlabel('Number of parallel incident groups', fontsize=16)
-    plt.savefig('parallel incident.png')
-    plt.close()
-
-    min_gap = [correlated_num[i] + parallel_num[i] for i in range(len(correlated_num))]
-    min_gap_duration_groups = [0 for i in range(5)]
-    for a_g in min_gap:
-        d = get_between(hist_range, a_g)
-        min_gap_duration_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    labels = [f / len(min_gap) for f in min_gap_duration_groups]
-    rects = ax.bar(np.arange(1, 6, 1), labels, width=1)
-    plt.xticks(np.arange(1, 6, 1),
-               ['0', '%s - %s' % (start, start + bin - 1), '%s - %s' % (start + bin, start + bin * 2 - 1),
-                '%s - %s' % (start + bin * 2, start + bin * 3 - 1),
-                'more than\n %s' % (start + bin * 3 - 1)], fontsize=16)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0.5, 5.5)
-    axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04,
-                "{0:.1f}%".format(labels[i] * 100), ha='center', va='center', fontsize=18)
-    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
-    plt.xlabel('Number of incident groups\n ocurring at the same time at each station', fontsize=16)
-    plt.savefig('total incident.png')
-    plt.close()
-
-    same_time_incident_groups = [0 for i in range(4)]
-    for a_g in same_time_num:
-        d = get_between(np.arange(0.5, 5, 1), a_g)
-        same_time_incident_groups[d] += 1
-    fig = plt.figure(figsize=(7, 4.5), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-
-    labels = [f / len(same_time_num) for f in same_time_incident_groups]
-    labels = same_time_incident_groups
-
-    rects = ax.bar(np.arange(1, 5, 1), labels, width=1)
-    for tick in ax.yaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    for tick in ax.xaxis.get_major_ticks():
-        tick.label.set_fontsize(16)
-    axes = plt.gca()
-    y_limit = axes.get_ylim()
-    coef = [1, 1.1]
-    y_limit = [y_limit[i] * coef[i] for i in range(2)]
-    axes.set_ylim(y_limit)
-    axes.set_xlim(0.5, 4.5)
-    # axes.yaxis.set_major_formatter(PercentFormatter(1))
-    for i in range(len(rects)):
-        rect = rects[i]
-        height = rect.get_height()
-        get_x = rect.get_x()
-        # ax.text(get_x + 1/2, height + y_limit[1]*0.04, "{0:.1f}%".format(labels[i] * 100), ha='center', va='center',fontsize=18)
-        ax.text(get_x + 1 / 2, height + y_limit[1] * 0.04, labels[i], ha='center', va='center', fontsize=18)
-    plt.title('Radius = %s miles' % (int(r / 1000 / 1.60934)), fontsize=16)
-    plt.xlabel('Highest number of parallel incidents\n occurring at the same time', fontsize=16)
-    plt.savefig('same time incident.png')
-    plt.close()
+    # raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%',r)
+    # raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991',r)
+    # raster_coverage(center_set_points,key_center_set,raster_area3,'Floyd 1999',r)
+    draw(original_point_set,[p[0] for p in center_set_points],r,[p[1] for p in center_set_points])
 
 
-def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,threshold):
+def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,severity,sub_type,threshold):
     key_threshold = r / 1000 / 1.60934 * 12
     flink = open('stations.txt','w+')
     original_point_set = point_set.copy()
@@ -379,14 +70,16 @@ def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,thresho
     correlated_incidents_set=[]
     parallel_incident_set=[]
     same_time_incident_set=[]
+    MIC_full_info=[]
     while len(point_set)>(len(original_point_set)*threshold):
-        circle_info = circle_rank(center_set, point_set)
+        circle_info = circle_rank(center_set, point_set,r)
         if not len(circle_info):
             break
         excluded_set=circle_info[1]
         final_center_set.append((circle_info[0],len(excluded_set)))
         min_t_gap,avg_t_gap,num_same_time_incident,correlated_incidents,parallel_incidents=find_minimum_time_gap\
-            (start_time_set,duration_set,excluded_set,original_point_set)
+            (start_time_set,duration_set,severity,sub_type,excluded_set,original_point_set)
+        MIC_full_info+=correlated_incidents
         min_t_gap_set.append(min_t_gap)
         average_t_gap_set.append(avg_t_gap)
         correlated_incidents_set.append(len(correlated_incidents))
@@ -410,174 +103,12 @@ def exclude_unnecessary(center_set,point_set,start_time_set,duration_set,thresho
     # print('number of key stations:', key_count)
     # print('key stations coverage:', key_sum / len(original_point_set))
     # print('coverage:',1-len(point_set)/len(original_point_set))
+
+    MIC_analyses(MIC_full_info)
+
     return final_center_set,original_point_set,key_center_set,\
-           min_t_gap_set,key_min_t_gap_set,correlated_incidents_set,parallel_incident_set,same_time_incident_set
+           min_t_gap_set,key_min_t_gap_set,correlated_incidents_set,parallel_incident_set, same_time_incident_set
 
-def find_minimum_time_gap(start_time_set,duration_set,excluded_set,original_point_set):
-
-    index_set=[]
-    for p in excluded_set:
-        index_set.append(original_point_set.index(p))
-    indexed_incident=[[start_time_set[i],start_time_set[i]+timedelta(minutes=duration_set[i])]for i in index_set]
-    for i in range(len(excluded_set)):
-        indexed_incident[i].append(excluded_set[i])
-    indexed_incident.sort(key=lambda index_time: index_time[0])
-    if len(indexed_incident)==1:
-        return 1e8,1e8,1,[],[]
-
-    start_time=[t[0] for t in indexed_incident]
-    end_time=[t[1] for t in indexed_incident]
-    location=[t[2] for t in indexed_incident]
-
-    same_time_threshold=25
-    gap_set=[]
-    min_gap = timedelta(1e8)
-    current_end_time=end_time[0]
-    current_occuring=[(start_time[0],end_time[0]+timedelta(minutes=same_time_threshold),location[0])]
-    correlated_incident_set=[]
-    parallel_incident_set=[]
-
-    for i in range(1,len(indexed_incident)):
-        # gap
-        gap=max(timedelta(0),start_time[i]-current_end_time)
-        gap_set.append(gap)
-        if gap<min_gap:
-            min_gap=gap
-        current_end_time=max(current_end_time,end_time[i])
-        # same time incident
-        current_occuring = [elem for elem in current_occuring if elem[1]>start_time[i]]
-        # same_time_incident=max(same_time_incident,len(current_occuring)+1)
-        current_occuring.append((start_time[i],end_time[i]+timedelta(minutes=same_time_threshold),location[i]))
-        if len(current_occuring)>1:
-            correlated_incidents,parrallel_incidents=find_correlated(current_occuring)
-
-            for c_i in correlated_incidents:
-                if len(correlated_incident_set)==0:
-                    correlated_incident_set.append(c_i)
-                    continue
-                if c_i[0] in correlated_incident_set[-1]:
-                    correlated_incident_set.pop(-1)
-                correlated_incident_set.append(c_i)
-
-            for p_i in parrallel_incidents:
-                if len(parallel_incident_set)==0:
-                    parallel_incident_set.append(p_i)
-                    continue
-                if list(p_i.keys())[0] in list(parallel_incident_set[-1].keys()):
-                    parallel_incident_set.pop(-1)
-                parallel_incident_set.append(p_i)
-
-    td_mins = round(min_gap.total_seconds() / 60, 1)
-    if len(gap_set)>1:
-        td_average=np.mean([round(gap.total_seconds() / 60, 1) for gap in gap_set])
-    else:
-        td_average=round(gap_set[0].total_seconds() / 60, 1)
-
-    try:
-        same_time_incident=max([len(p_i) for p_i in parallel_incident_set])
-    except:
-        same_time_incident = 1
-
-    return td_mins,td_average,same_time_incident,correlated_incident_set,parallel_incident_set
-
-def find_correlated(current_occuring):
-    loc=[incident[2] for incident in current_occuring]
-    n=len(loc)
-    distance_threshold=100
-    correlated_incidents=[]
-    parallel_incidents=[]
-
-    center=[]
-    group={}
-    for i in range(n):
-        Independence=True
-        for c in center:
-            if cal_distance_simplified(loc[i],c)<distance_threshold:
-                group[c].append(loc[i])
-                Independence=False
-        if Independence:
-           center.append(loc[i])
-           group[loc[i]] = [loc[i]]
-    for g in group:
-        if len(group[g])>1:
-            correlated_incidents.append(group[g])
-    if len(group)>1:
-        parallel_incidents.append(group)
-    return correlated_incidents, parallel_incidents
-
-def circle_rank(center_set,point_set):
-    circle_info=[]
-    max_cov=0
-    for center in center_set:
-        included_set=find_included(center,point_set,[],r)
-        if len(included_set)>max_cov:
-            circle_info=(center,included_set)
-            max_cov=len(included_set)
-    return circle_info
-
-def raster_coverage(center_point_set,key_station,point_set,name):
-    included_set=[]
-    key_coverage=0
-    for c_p in center_point_set:
-        old_included_set=included_set.copy()
-        included_set=find_included(c_p[0],point_set,included_set,r)
-        if c_p in key_station:
-            key_coverage+=len(included_set)-len(old_included_set)
-    coverage=len(included_set)/len(point_set)
-    k_c=key_coverage/len(point_set)
-    print('%s converage:'%name,coverage,' key coverage:',k_c)
-
-def find_furthest_point(point,point_set,included_set):
-    distance=0
-    p_f=(0,0)
-    for p in point_set:
-        if p not in included_set:
-            distance_n = cal_distance_simplified(p, point)
-            if distance_n > distance:
-                distance = distance_n
-                p_f = p
-    if distance>r:
-        return p_f
-    return None
-
-def generate_random_circle(point_set,n):
-    center_set=[]
-    for point in point_set:
-        for i in range(n):
-            center_x=point[0]+random.uniform(-1,1)*r/100
-            center_y=point[1]+random.uniform(-1,1)*r/100
-            center_set.append((center_x,center_y))
-    return center_set
-
-def sortSecondLen(val):
-    return len(val[1])
-
-def draw(point_set,center_set,frequency=None):
-    fig = plt.figure(figsize=(13, 6), dpi=100, tight_layout=True)
-    ax = fig.add_subplot(111)
-    scatter1=[p[0] for p in point_set]
-    scatter2=[p[1] for p in point_set]
-    plt.scatter(scatter2,scatter1,s=1,edgecolors='k')
-    for i in range(len(center_set)):
-        p=center_set[i]
-        f=frequency[i]
-        if frequency is not None:
-            c,a=decide_color(f,threshold=120)
-        patch = patches.Circle((p[1],p[0]), radius=r,fc=c,alpha=a)
-        ax.add_patch(patch)
-    plt.legend((patches.Circle((0,0), radius=r,fc='r',alpha=0.2),patches.Circle((0,0), radius=r,fc='g',alpha=0.1)), ('Key stations', 'Regular Stations'))
-    plt.savefig('station.png')
-
-def decide_color(f,threshold):
-    if f>=threshold:
-        return 'r',0.2
-    else:
-        return 'g',0.1
-
-def get_between(x, d):
-    for i in range(len(x)):
-        if d<=x[i+1]:
-            return i
 
 if __name__ == '__main__':
     global TH,r
