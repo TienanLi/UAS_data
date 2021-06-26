@@ -30,7 +30,7 @@ def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
 
     best_result=[1e8 for i in range(3)]
     for i in range(200):
-        method='rank_regulated'
+        method='rank'
         center_set_points,original_point_set,key_center_set,min_gap,key_min,correlated_num,parallel_num,same_time_num=\
             network_algorithm(m_d_set.copy(),point_set.copy(),start_time_set.copy(),duration_set.copy(),
                                 severity.copy(),sub_type.copy(),r,threshold=TH,method=method)
@@ -55,8 +55,8 @@ def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
 
 if __name__ == '__main__':
     global TH,r
-    TH = 0.05
-    for r in range(3,5):
+    TH = 0.05 # how much point can be ignored, i.e., 0.05 means >=95% coverage
+    for r in [5, 10]:
         print('radius:',r)
         r = r * 1000
         r = r * 1.60934

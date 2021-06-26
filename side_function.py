@@ -1,4 +1,5 @@
-from pyproj import Proj, transform
+from pyproj import Proj, transform, CRS
+#from pyproj import Proj, Transformer
 import shapefile
 from math import sin, cos, sqrt, atan2, radians, ceil
 from datetime import timedelta
@@ -14,9 +15,15 @@ from scipy import stats
 
 def covert_coordinate_from_4326_to_MA(point):
     y1, x1 = point[0], point[1]
-    inProj = Proj(init='epsg:4326')
-    outProj = Proj(init='epsg:26986')
-    x2, y2 = transform(inProj, outProj, x1, y1)
+    # ------original codes, not usable now due to the pyproj package update---
+    # inProj = Proj(init='epsg:4326')
+    # outProj = Proj(init='epsg:26986')
+    # x2, y2 = transform(inProj, outProj, x1, y1)
+
+    # updated codes, note the order of x and y has swapped in the new function
+    inProj = CRS('EPSG:4326')
+    outProj = CRS('EPSG:26986')
+    y2, x2 = transform(inProj, outProj, y1, x1)
     return (y2, x2)
 
 def maintenance_depots(shpname):
@@ -231,6 +238,7 @@ def circle_rank_regulated(center_set,point_set,r,start_time_set,duration_set,sev
     circle_info=[]
     max_objective=1e8
     for center in center_set:
+        print(center)
         included_set=find_included(center,point_set,[],r)
         if len(included_set)==0:
             continue
