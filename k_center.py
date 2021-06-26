@@ -14,25 +14,22 @@ def read_point_and_process():
     severity=[p[3] for p in point_set]
     sub_type=[p[4] for p in point_set]
     point_set=[p[0] for p in point_set]
-
     # print('incidents:',len(point_set))
-    new_point_set=[(p[0]+random.uniform(-1e-09,1e-09),p[1]+random.uniform(-1e-09,1e-09)) for p in point_set]
-    new_point_set=[covert_coordinate_from_4326_to_MA(p) for p in new_point_set]
-
+    new_point_set=[(p[0]+random.uniform(-1e-09,1e-09), p[1]+random.uniform(-1e-09, 1e-09)) for p in point_set]
     global TH,r
     TH = 0.05 # how much point can be ignored, i.e., 0.05 means >=95% coverage
     for r in [5, 10]:
         print('radius:',r)
         r = r * 1000
         r = r * 1.60934
-        greedy_find(new_point_set,start_time,duration,severity,sub_type)
+        greedy_find(new_point_set, start_time, duration, severity, sub_type)
     # greedy_generate(point_set)
 
 def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
     # raster_area1=read_raster('ForLowell/2%floodfinal.tif')
     # raster_area2=read_raster('ForLowell/bob9151mph1.tif')
     # raster_area3=read_raster('ForLowell/fld9951mph1.tif')
-    m_d_set=maintenance_depots('Maintenance_Depots/Maintenance_Depots.shp')
+    m_d_set=maintenance_depots('Maintenance_Depots.shp')
 
     best_result=[1e8 for i in range(3)]
     for i in range(200):
@@ -46,7 +43,7 @@ def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
         if method in ['rank','rank_regulated']:
             break
 
-    print('linear cost:',best_result[0])
+    # print('linear cost:',best_result[0])
     print('station num:',best_result[1])
     print('drones needed:',best_result[2],'\n')
 

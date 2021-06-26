@@ -238,12 +238,14 @@ def circle_rank_regulated(center_set,point_set,r,start_time_set,duration_set,sev
     circle_info=[]
     max_objective=1e8
     for center in center_set:
-        print(center)
+        # print(center)
         included_set=find_included(center,point_set,[],r)
         if len(included_set)==0:
             continue
         min_t_gap, avg_t_gap, num_same_time_incident, correlated_incidents, parallel_incidents, SIC_info = find_minimum_time_gap \
             (start_time_set, duration_set, severity, sub_type, included_set, original_point_set)
+
+
         single_station_cost=cal_single_cost(num_same_time_incident,r)
         # single_station_cost=(1e8,1e8)
         # objective=len(included_set)-alpha*single_station_cost[0]
