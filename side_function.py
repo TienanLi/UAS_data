@@ -1,6 +1,9 @@
 from pyproj import Proj, transform, CRS
 #from pyproj import Proj, Transformer
 import shapefile
+import geopandas as gpd
+import pickle
+from tqdm import tqdm
 from math import sin, cos, sqrt, atan2, radians, ceil
 from datetime import timedelta
 # import gdal
@@ -364,9 +367,41 @@ def generate_random_circle(point_set,n,r):
 def sortSecondLen(val):
     return len(val[1])
 
-def draw(point_set,center_set,r,frequency=None):
-    fig = plt.figure(figsize=(13, 6), dpi=100, tight_layout=True)
+def transfer_polygon(points):
+    new_points = []
+    for p in points:
+        y_T, x_T = covert_coordinate_from_4326_to_MA((float(p[0]), float(p[1])))
+        new_points.append((x_T, y_T))
+    return new_points
+
+def simplify_and_transfer_polygon(points, max_points = None):
+    if not max_points:
+        return transfer_polygon(points)
+
+    new_points = []
+    if len(points) > max_points:
+        new_points.append(points[0])
+        for i in np.random.choice(np.arange(1, len(points)), max_points - 2):
+            new_points.append(points[i])
+        new_points.append(points[-1])
+        return new_points
+    else:
+        return transfer_polygon(points)
+
+def draw(point_set,center_set,r,frequency=None,road_map=False):
+    fig = plt.figure(figsize=(9, 6), dpi=100, tight_layout=True)
     ax = fig.add_subplot(111)
+
+    if road_map:
+        print('putting on road_map...')
+
+        roads = pickle.load(open('road_map.obj', 'rb'))
+        for i in tqdm(range(len(roads))):
+            points = roads[i]
+            plt.plot([p[1] for p in points], [p[0] for p in points], 'k', alpha=.2, linewidth=.5)
+
+        print('finish putting on road_map')
+
     scatter1=[p[0] for p in point_set]
     scatter2=[p[1] for p in point_set]
     plt.scatter(scatter2,scatter1,s=1,edgecolors='k')
@@ -377,7 +412,10 @@ def draw(point_set,center_set,r,frequency=None):
             c,a=decide_color(f,threshold=120)
         patch = patches.Circle((p[1],p[0]), radius=r,fc=c,alpha=a)
         ax.add_patch(patch)
-    plt.legend((patches.Circle((0,0), radius=r,fc='r',alpha=0.2),patches.Circle((0,0), radius=r,fc='g',alpha=0.1)), ('Key stations', 'Regular Stations'))
+    plt.legend((patches.Circle((0,0), radius=r,fc='r',alpha=0.2),patches.Circle((0,0), radius=r,fc='g',alpha=0.1)),
+               ('Key stations', 'Regular Stations'), fontsize=12, loc=3)
+    plt.xticks([])
+    plt.yticks([])
     plt.savefig('station.png')
 
 def decide_color(f,threshold):

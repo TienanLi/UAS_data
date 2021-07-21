@@ -2,7 +2,7 @@ import pickle
 import random
 import matplotlib
 from side_function import covert_coordinate_from_4326_to_MA,maintenance_depots,cal_cost,network_algorithm,draw_figures,\
-    read_raster, raster_coverage
+    read_raster, raster_coverage, draw
 
 font = {'size'   : 24}
 matplotlib.rc('font', **font)
@@ -18,7 +18,7 @@ def read_point_and_process():
     new_point_set=[(p[0]+random.uniform(-1e-09,1e-09), p[1]+random.uniform(-1e-09, 1e-09)) for p in point_set]
     global TH,r
     TH = 0.05 # how much point can be ignored, i.e., 0.05 means >=95% coverage
-    for r in [5, 10]:
+    for r in [5]:
         print('radius:',r)
         r = r * 1000
         r = r * 1.60934
@@ -49,7 +49,7 @@ def greedy_find(point_set,start_time_set,duration_set,severity,sub_type):
 
     # frequency_and_MICSC(center_set_points,key_center_set,correlated_num,parallel_num)
     # draw_figures(min_gap,key_min,correlated_num,parallel_num,same_time_num,r)
-    # draw(original_point_set,[p[0] for p in center_set_points],r,[p[1] for p in center_set_points])
+    draw(original_point_set,[p[0] for p in center_set_points],r,[p[1] for p in center_set_points],road_map=True)
 
     # raster_coverage(center_set_points,key_center_set,raster_area1,'NOAA 2%',r)
     # raster_coverage(center_set_points,key_center_set,raster_area2,'Bob 1991',r)
