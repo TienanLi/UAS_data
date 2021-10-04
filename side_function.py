@@ -1,7 +1,8 @@
 from pyproj import Proj, transform, CRS
 #from pyproj import Proj, Transformer
 import shapefile
-import geopandas as gpd
+import os
+# import geopandas as gpd
 import pickle
 from tqdm import tqdm
 from math import sin, cos, sqrt, atan2, radians, ceil
@@ -388,14 +389,16 @@ def simplify_and_transfer_polygon(points, max_points = None):
     else:
         return transfer_polygon(points)
 
-def draw(point_set,center_set,r,frequency=None,road_map=False):
+def draw(point_set,center_set,r,key_threshold,frequency=None,road_map=False):
+    r_in_mile = int(round(r/1000/1.60934))
+
     fig = plt.figure(figsize=(9, 6), dpi=100, tight_layout=True)
     ax = fig.add_subplot(111)
 
     if road_map:
         print('putting on road_map...')
 
-        roads = pickle.load(open('road_map.obj', 'rb'))
+        roads = pickle.load(open(os.getcwd() + '/UAS_2021/road_map.obj', 'rb'))
         for i in tqdm(range(len(roads))):
             points = roads[i]
             plt.plot([p[1] for p in points], [p[0] for p in points], 'k', alpha=.2, linewidth=.5)
@@ -405,18 +408,24 @@ def draw(point_set,center_set,r,frequency=None,road_map=False):
     scatter1=[p[0] for p in point_set]
     scatter2=[p[1] for p in point_set]
     plt.scatter(scatter2,scatter1,s=1,edgecolors='k')
+    key_station_count = 0
     for i in range(len(center_set)):
         p=center_set[i]
         f=frequency[i]
         if frequency is not None:
-            c,a=decide_color(f,threshold=120)
+            c,a=decide_color(f,threshold=key_threshold)
+            if c == 'r':
+                key_station_count += 1
         patch = patches.Circle((p[1],p[0]), radius=r,fc=c,alpha=a)
         ax.add_patch(patch)
     plt.legend((patches.Circle((0,0), radius=r,fc='r',alpha=0.2),patches.Circle((0,0), radius=r,fc='g',alpha=0.1)),
                ('Key stations', 'Regular Stations'), fontsize=12, loc=3)
     plt.xticks([])
     plt.yticks([])
-    plt.savefig('station.png')
+    plt.ylim(785000, 975000)
+    plt.title(f'radius: {r_in_mile}miles, number of all stations: {len(center_set)}, number of key stations: {key_station_count}',
+              fontsize=12)
+    plt.savefig(f'r={r_in_mile}.png')
 
 def decide_color(f,threshold):
     if f>=threshold:
@@ -717,8 +726,9 @@ def linear_regression(X,Y):
     # plt.yticks(())
     # plt.show()
 
-def network_algorithm(center_set,point_set,start_time_set,duration_set,severity,sub_type,r,threshold,method):
-    key_threshold = r / 1000 / 1.60934 * 12
+def network_algorithm(center_set,point_set,start_time_set,duration_set,severity,sub_type,r,threshold,method,key_threshold):
+
+
     original_point_set = point_set.copy()
     final_center_set = []
     key_sum=0
